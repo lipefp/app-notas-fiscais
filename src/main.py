@@ -1,7 +1,7 @@
 import sys
 import os
 from PyQt5.QtWidgets import (
-    QApplication, QLabel, QVBoxLayout, QWidget, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QHBoxLayout, QHeaderView
+    QApplication, QLabel, QVBoxLayout, QWidget, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QHBoxLayout, QHeaderView, QGroupBox, QMessageBox
 )
 from PyQt5.QtCore import Qt
 import models.db
@@ -157,6 +157,7 @@ class DetalheCliente(QWidget):
         self.parent = parent
         self.cliente = cliente
         self.setWindowTitle("Detalhes do Cliente")
+        self.setGeometry(200, 200, 420, 340)
         self.setStyleSheet("""
             QWidget {
                 background-color: #f7f7f7;
@@ -169,26 +170,41 @@ class DetalheCliente(QWidget):
                 margin-top: 8px;
                 margin-bottom: 4px;
             }
+            QGroupBox {
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                margin-top: 12px;
+                background-color: #fff;
+                padding: 12px;
+            }
             QPushButton {
                 background-color: #fff;
                 border: 1px solid #ccc;
                 border-radius: 6px;
-                padding: 6px 14px;
-                min-width: 100px;
-                margin-top: 12px;
+                padding: 8px 18px;
+                min-width: 140px;
+                margin-top: 18px;
+                font-weight: 600;
+                color: #c0392b;
             }
             QPushButton:hover {
                 background-color: #eaeaea;
             }
         """)
+
         layout = QVBoxLayout()
-        for campo, valor in zip(
-            ["Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Observações"],
-            cliente
-        ):
+        group = QGroupBox("Informações do Cliente")
+        group_layout = QVBoxLayout()
+
+        campos = ["Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Observações"]
+        for i, (campo, valor) in enumerate(zip(campos, cliente)):
             label = QLabel(f"<b>{campo}:</b> {valor}")
             label.setTextFormat(Qt.RichText)
-            layout.addWidget(label)
+            if i == 0:
+                label.setStyleSheet("font-size:16px; font-weight:600; color:#2a5d9f; margin-bottom:10px;")
+            group_layout.addWidget(label)
+        group.setLayout(group_layout)
+        layout.addWidget(group)
 
         self.btn_excluir = QPushButton("Excluir Cliente")
         self.btn_excluir.clicked.connect(self.excluir_cliente)
@@ -197,19 +213,26 @@ class DetalheCliente(QWidget):
         self.setLayout(layout)
 
     def excluir_cliente(self):
-        from models.db import conectar
-        conn = conectar()
-        cursor = conn.cursor()
-        # Exclui pelo nome e telefone (ajuste se tiver ID único)
-        cursor.execute(
-            "DELETE FROM clientes WHERE nome=? AND telefone=?",
-            (self.cliente[0], self.cliente[1])
+        reply = QMessageBox.question(
+            self,
+            "Confirmação",
+            "Tem certeza que deseja excluir este cliente?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
-        conn.commit()
-        conn.close()
-        if self.parent:
-            self.parent.carregar_clientes()
-        self.close()
+        if reply == QMessageBox.Yes:
+            from models.db import conectar
+            conn = conectar()
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM clientes WHERE nome=? AND telefone=?",
+                (self.cliente[0], self.cliente[1])
+            )
+            conn.commit()
+            conn.close()
+            if self.parent:
+                self.parent.carregar_clientes()
+            self.close()
 
 class MenuPrincipal(QWidget):
     def __init__(self):
@@ -298,7 +321,7 @@ class MenuPrincipal(QWidget):
         botoes_layout.addWidget(btn_cadastrar)
 
         btn_nota = QPushButton("Gerar Nota")
-        btn_nota.clicked.connect(self.gerar_nota)
+        btn_nota.clicked.connect(self.gerar_nota)   
         botoes_layout.addWidget(btn_nota)
 
         btn_sair = QPushButton("Encerrar")
@@ -347,7 +370,23 @@ class MenuPrincipal(QWidget):
         self.detalhe.show()
 
     def gerar_nota(self):
-        print("Função de gerar nota será implementada...")
+        from models.db import conectar
+        from models.nota import NotaDialog
+        from PyQt5.QtWidgets import QMessageBox
+
+        conn = conectar()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome, telefone, endereco, carro, placa, ano, km, observacoes FROM clientes")
+        clientes = cursor.fetchall()
+        conn.close()
+
+        if not clientes:
+            QMessageBox.warning(self, "Atenção", "Nenhum cliente cadastrado.")
+            return
+
+        self.janela_nota = NotaDialog(clientes)
+        self.janela_nota.exec_()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
