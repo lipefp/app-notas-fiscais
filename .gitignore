@@ -1,0 +1,9 @@
+*.db
+*.sqlite3
+pycache/
+*.py[cod]
+*$py.class
+*.pdf
+venv/
+env/.vscode/
+.idea/
