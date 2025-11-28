@@ -20,7 +20,7 @@ import models.db as db
 from models.db import conectar, salvar_cliente
 
 # =============================================================================
-# ESTILO GLOBAL (CSS) - TEMA CLEAN / MACOS INSPIRED
+# ESTILO GLOBAL
 # =============================================================================
 STYLESHEET = """
     /* Fundo Geral */
