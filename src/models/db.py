@@ -1,34 +1,24 @@
 import sqlite3
 import os
+from datetime import datetime
 
 # --- CONFIGURAÇÃO DO CAMINHO DO BANCO ---
-# Pega o caminho absoluto da pasta onde o projeto está rodando
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Define a pasta 'data' dentro do projeto
 DATA_DIR = os.path.join(BASE_DIR, "data")
-# Define o nome do arquivo final
 DB_NAME = os.path.join(DATA_DIR, "banco.db")
 
 def conectar():
-    """Conecta ao banco de dados, criando a pasta 'data' se necessário."""
-    # Se a pasta 'data' não existir, cria ela agora
     if not os.path.exists(DATA_DIR):
-        try:
-            os.makedirs(DATA_DIR)
-        except OSError as e:
-            print(f"Erro ao criar pasta data: {e}")
-            # Fallback: se falhar criar pasta, salva na raiz mesmo
-            return sqlite3.connect("banco.db")
-            
+        try: os.makedirs(DATA_DIR)
+        except: return sqlite3.connect("banco.db")
     return sqlite3.connect(DB_NAME)
 
 def criar_tabelas():
-    """Cria as tabelas se não existirem."""
     conn = conectar()
-    cursor = conn.cursor()
+    c = conn.cursor()
     
     # Tabela Clientes
-    cursor.execute("""
+    c.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT, telefone TEXT, endereco TEXT,
@@ -38,7 +28,7 @@ def criar_tabelas():
     """)
     
     # Tabela Histórico
-    cursor.execute("""
+    c.execute("""
         CREATE TABLE IF NOT EXISTS historico_servicos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             id_cliente INTEGER,
@@ -49,10 +39,21 @@ def criar_tabelas():
             FOREIGN KEY(id_cliente) REFERENCES clientes(id)
         )
     """)
+    
+    # Tabela Fechamentos (ESSENCIAL PARA O ERRO QUE VOCÊ TEVE)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS fechamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT,          -- 'Diário' ou 'Mensal'
+            periodo TEXT,       -- Ex: '27/11/2025'
+            valor REAL,
+            data_registro TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
-# --- Funções de Clientes ---
+# --- CLIENTES ---
 def salvar_cliente(nome, telefone, endereco, carro, placa, ano, km, observacoes):
     conn = conectar()
     conn.cursor().execute("""
@@ -65,27 +66,26 @@ def salvar_cliente(nome, telefone, endereco, carro, placa, ano, km, observacoes)
 def listar_clientes():
     conn = conectar()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, status, nome, telefone, endereco, carro, placa, ano, km, observacoes FROM clientes")
-        dados = cursor.fetchall()
-    except:
-        dados = []
+        c = conn.cursor()
+        c.execute("SELECT id, status, nome, telefone, endereco, carro, placa, ano, km, observacoes FROM clientes")
+        dados = c.fetchall()
+    except: dados = []
     conn.close()
     return dados
 
 def atualizar_status(id_cliente, novo_status):
     conn = conectar()
-    conn.cursor().execute("UPDATE clientes SET status = ? WHERE id = ?", (novo_status, id_cliente))
+    conn.cursor().execute("UPDATE clientes SET status=? WHERE id=?", (novo_status, id_cliente))
     conn.commit()
     conn.close()
 
 def deletar_cliente(id_cliente):
     conn = conectar()
-    conn.cursor().execute("DELETE FROM clientes WHERE id = ?", (id_cliente,))
+    conn.cursor().execute("DELETE FROM clientes WHERE id=?", (id_cliente,))
     conn.commit()
     conn.close()
 
-# --- Funções de Histórico e Financeiro ---
+# --- HISTÓRICO ---
 def salvar_historico(id_cliente, data, itens_json, total, arquivo):
     conn = conectar()
     conn.cursor().execute("""
@@ -97,21 +97,47 @@ def salvar_historico(id_cliente, data, itens_json, total, arquivo):
 
 def listar_historico(id_cliente):
     conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT data_servico, itens_json, valor_total FROM historico_servicos WHERE id_cliente = ? ORDER BY id DESC", (id_cliente,))
-    dados = cursor.fetchall()
+    c = conn.cursor()
+    c.execute("SELECT data_servico, itens_json, valor_total FROM historico_servicos WHERE id_cliente=? ORDER BY id DESC", (id_cliente,))
+    dados = c.fetchall()
     conn.close()
     return dados
 
-def obter_total_financeiro():
+# --- FINANCEIRO (AS FUNÇÕES QUE ESTÃO FALTANDO) ---
+
+def calcular_total_dia(data_str):
+    """Soma notas emitidas na data exata."""
     conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT SUM(valor_total) FROM historico_servicos")
-    res = cursor.fetchone()[0]
+    c = conn.cursor()
+    c.execute("SELECT SUM(valor_total) FROM historico_servicos WHERE data_servico = ?", (data_str,))
+    res = c.fetchone()[0]
     conn.close()
     return res if res else 0.0
 
-# --- AUTO-INICIALIZAÇÃO ---
-# Executa a criação das tabelas automaticamente quando este arquivo é importado.
-# Isso evita o erro "no such table" mesmo se o main.py esquecer de chamar.
+def calcular_total_mes(mes, ano):
+    """Soma notas emitidas no mês."""
+    conn = conectar()
+    c = conn.cursor()
+    termo = f"%/{mes}/{ano}"
+    c.execute("SELECT SUM(valor_total) FROM historico_servicos WHERE data_servico LIKE ?", (termo,))
+    res = c.fetchone()[0]
+    conn.close()
+    return res if res else 0.0
+
+def registrar_fechamento(tipo, periodo, valor):
+    conn = conectar()
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    conn.cursor().execute("INSERT INTO fechamentos (tipo, periodo, valor, data_registro) VALUES (?, ?, ?, ?)", (tipo, periodo, valor, agora))
+    conn.commit()
+    conn.close()
+
+def listar_fechamentos():
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("SELECT tipo, periodo, valor, data_registro FROM fechamentos ORDER BY id DESC")
+    dados = c.fetchall()
+    conn.close()
+    return dados
+
+# Garante criação ao importar
 criar_tabelas()
