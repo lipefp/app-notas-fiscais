@@ -311,8 +311,6 @@ class DialogoFinanceiro(QDialog):
         registros = db.listar_fechamentos()
         self.tabela.setRowCount(len(registros))
         for i, row in enumerate(registros):
-            # Aqui está a correção: pegamos apenas os 4 primeiros itens, independente de quantos vierem
-            # Isso previne o erro "too many values to unpack"
             if len(row) >= 4:
                 tipo, periodo, valor, data_reg = row[:4]
                 
