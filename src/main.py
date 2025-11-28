@@ -7,47 +7,42 @@ from PyQt5.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, QLineEdit, QPushButton, 
     QTableWidget, QTableWidgetItem, QHBoxLayout, QHeaderView, QDialog, 
     QDialogButtonBox, QFileDialog, QMessageBox, QAbstractItemView,
-    QComboBox, QFrame
+    QComboBox, QFrame, QGridLayout
 )
-from PyQt5.QtGui import QIntValidator, QDoubleValidator, QColor, QFont
+from PyQt5.QtGui import QIntValidator, QColor, QFont
 from PyQt5.QtCore import Qt
 
-# --- BIBLIOTECAS PARA O PDF ---
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-# --- IMPORTAÇÃO DO BANCO DE DADOS ---
-try:
-    import models.db as db
-    from models.db import conectar, salvar_cliente
-except ImportError:
-    print("ERRO CRÍTICO: Pasta 'models' ou arquivo 'db.py' não encontrados.")
-    sys.exit(1)
+import models.db as db
+from models.db import conectar, salvar_cliente
 
 # =============================================================================
 # ESTILO GLOBAL (CSS) - TEMA CLEAN / MACOS INSPIRED
 # =============================================================================
 STYLESHEET = """
+    /* Fundo Geral */
     QWidget {
         background-color: #FFFFFF;
         color: #333333;
         font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
         font-size: 14px;
     }
-    
-    /* Janelas de Diálogo */
+
+    /* Janelas Modais */
     QDialog {
         background-color: #FFFFFF;
     }
 
-    /* Campos de Texto */
+    /* Campos de Texto e Combobox */
     QLineEdit, QComboBox {
-        border: 1px solid #E5E5E5;
+        background-color: #F5F5F7;
+        border: 1px solid #E5E5EA;
         border-radius: 8px;
         padding: 8px 12px;
-        background-color: #F9F9F9;
-        selection-background-color: #007AFF;
+        color: #1D1D1F;
     }
     QLineEdit:focus, QComboBox:focus {
         border: 1px solid #007AFF;
@@ -56,50 +51,60 @@ STYLESHEET = """
 
     /* Tabelas */
     QTableWidget {
-        border: 1px solid #E5E5E5;
-        border-radius: 8px;
+        border: 1px solid #E5E5EA;
+        border-radius: 10px;
         gridline-color: #F0F0F0;
-        alternate-background-color: #FAFAFA;
+        background-color: #FFFFFF;
         selection-background-color: #E3F2FD;
-        selection-color: #333333;
+        selection-color: #1D1D1F;
     }
     QHeaderView::section {
-        background-color: #FFFFFF;
+        background-color: #F5F5F7;
         border: none;
-        border-bottom: 2px solid #F0F0F0;
-        padding: 8px;
+        border-bottom: 1px solid #E5E5EA;
+        padding: 10px;
         font-weight: bold;
-        color: #555555;
+        color: #666666;
     }
 
-    /* Botões Genéricos */
+    /* Botões Padrão (Cinza Suave) */
     QPushButton {
         background-color: #F5F5F7;
-        border: 1px solid #E5E5E5;
+        border: 1px solid #E5E5EA;
         border-radius: 8px;
         padding: 8px 16px;
-        color: #333333;
+        color: #1D1D1F;
         font-weight: 500;
     }
     QPushButton:hover {
         background-color: #EBEBEB;
-        border-color: #D1D1D1;
+        border-color: #D1D1D6;
     }
     QPushButton:pressed {
-        background-color: #E0E0E0;
+        background-color: #DEDEDE;
     }
 
-    /* Botões de Ação Primária (Azul) */
+    /* Botões de Destaque (Azul) */
     QPushButton[class="primary"] {
         background-color: #007AFF;
         color: white;
         border: none;
     }
     QPushButton[class="primary"]:hover {
-        background-color: #0069D9;
+        background-color: #0062CC;
+    }
+    
+    /* Botões de Sucesso (Verde) */
+    QPushButton[class="success"] {
+        background-color: #34C759;
+        color: white;
+        border: none;
+    }
+    QPushButton[class="success"]:hover {
+        background-color: #2DB84C;
     }
 
-    /* Botões de Perigo (Vermelho) */
+    /* Botões de Perigo (Vermelho Suave) */
     QPushButton[class="danger"] {
         background-color: #FFF2F2;
         color: #D32F2F;
@@ -109,20 +114,20 @@ STYLESHEET = """
         background-color: #FFEBEE;
         border-color: #EF9A9A;
     }
-    
-    /* Botões de Sucesso (Verde) */
-    QPushButton[class="success"] {
-        background-color: #F1F8E9;
-        color: #388E3C;
-        border: 1px solid #C8E6C9;
+
+    /* Labels de Título */
+    QLabel[class="titulo"] {
+        font-size: 22px;
+        font-weight: bold;
+        color: #1D1D1F;
+        margin-bottom: 15px;
     }
     
-    /* Labels de Título */
-    QLabel[class="title"] {
-        font-size: 18px;
-        font-weight: bold;
-        color: #111111;
-        margin-bottom: 10px;
+    /* Labels Financeiros */
+    QLabel[class="card-value"] { font-size: 24px; font-weight: bold; color: #2E7D32; }
+    QLabel[class="card-title"] { font-size: 14px; color: #666; font-weight: 600; }
+    QFrame[class="card"] { 
+        background-color: #FAFAFA; border: 1px solid #EEEEEE; border-radius: 12px; 
     }
 """
 
@@ -130,9 +135,12 @@ STYLESHEET = """
 # FUNÇÕES DE CONFIGURAÇÃO
 # =============================================================================
 def verificar_banco_historico():
+    """Garante que as tabelas existam."""
     try:
         conn = conectar()
         cursor = conn.cursor()
+        
+        # Histórico
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS historico_servicos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,10 +151,23 @@ def verificar_banco_historico():
                 arquivo_path TEXT
             )
         """)
+        
+        # Fechamentos
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fechamentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo TEXT,
+                periodo TEXT,
+                valor REAL,
+                data_registro TEXT
+            )
+        """)
+
         try:
             cursor.execute("SELECT status FROM clientes LIMIT 1")
         except:
             cursor.execute("ALTER TABLE clientes ADD COLUMN status TEXT DEFAULT 'Aberto'")
+            
         conn.commit()
         conn.close()
     except Exception as e:
@@ -159,17 +180,19 @@ def verificar_banco_historico():
 class DialogoHistorico(QDialog):
     def __init__(self, id_cliente, nome_cliente, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Histórico: {nome_cliente}")
+        self.setWindowTitle(f"Histórico - {nome_cliente}")
         self.resize(700, 500)
         
         layout = QVBoxLayout()
-        lbl_titulo = QLabel(f"Serviços: {nome_cliente}")
-        lbl_titulo.setProperty("class", "title")
-        layout.addWidget(lbl_titulo)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        lbl = QLabel(f"Histórico de Serviços")
+        lbl.setProperty("class", "titulo")
+        layout.addWidget(lbl)
         
         self.tabela = QTableWidget()
         self.tabela.setColumnCount(3)
-        self.tabela.setHorizontalHeaderLabels(["Data", "Resumo do Serviço", "Valor Total"])
+        self.tabela.setHorizontalHeaderLabels(["Data", "Resumo", "Total"])
         self.tabela.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tabela.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tabela.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -178,17 +201,15 @@ class DialogoHistorico(QDialog):
         layout.addWidget(self.tabela)
         
         btn = QPushButton("Fechar")
+        btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(self.close)
-        layout.addWidget(btn)
+        layout.addWidget(btn, alignment=Qt.AlignRight)
         
         self.setLayout(layout)
         self.carregar_dados(id_cliente)
 
     def carregar_dados(self, id_cliente):
-        conn = conectar()
-        cursor = conn.cursor()
-        cursor.execute("SELECT data_servico, itens_json, valor_total FROM historico_servicos WHERE id_cliente=? ORDER BY id DESC", (id_cliente,))
-        dados = cursor.fetchall()
+        dados = db.listar_historico(id_cliente)
         self.tabela.setRowCount(len(dados))
         for i, (data, itens_json, valor) in enumerate(dados):
             self.tabela.setItem(i, 0, QTableWidgetItem(data))
@@ -203,45 +224,154 @@ class DialogoHistorico(QDialog):
 class DialogoFinanceiro(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Relatório Financeiro")
-        self.resize(400, 250)
+        self.setWindowTitle("Gestão Financeira")
+        self.resize(850, 600)
         
         layout = QVBoxLayout()
-        layout.setSpacing(15)
+        layout.setSpacing(20)
+        layout.setContentsMargins(25, 25, 25, 25)
         
-        lbl_tit = QLabel("Faturamento Total")
-        lbl_tit.setProperty("class", "title")
-        lbl_tit.setAlignment(Qt.AlignCenter)
+        lbl_tit = QLabel("Painel Financeiro")
+        lbl_tit.setProperty("class", "titulo")
         layout.addWidget(lbl_tit)
         
-        total = self.calcular_total()
+        # --- ÁREA DE CARDS (DIA E MÊS) ---
+        cards_layout = QHBoxLayout()
+        cards_layout.setSpacing(20)
         
-        lbl = QLabel(f"R$ {total:,.2f}")
-        lbl.setStyleSheet("font-size: 32px; color: #2E7D32; font-weight: bold;")
-        lbl.setAlignment(Qt.AlignCenter)
-        layout.addWidget(lbl)
+        # Card Dia
+        self.card_dia = self.criar_card("Hoje", "R$ 0,00", "Fechar Caixa do Dia", self.fechar_dia)
+        cards_layout.addWidget(self.card_dia)
         
-        layout.addWidget(QLabel("Soma de todas as notas geradas no sistema."), alignment=Qt.AlignCenter)
+        # Card Mês
+        self.card_mes = self.criar_card("Mês Atual", "R$ 0,00", "Encerrar Mês", self.fechar_mes)
+        cards_layout.addWidget(self.card_mes)
+        
+        layout.addLayout(cards_layout)
+        
+        # --- TABELA DE REGISTROS ---
+        layout.addWidget(QLabel("Histórico de Fechamentos:", styleSheet="font-weight: bold; margin-top: 15px; font-size: 16px; color: #333;"))
+        
+        self.tabela = QTableWidget(0, 4)
+        self.tabela.setHorizontalHeaderLabels(["Tipo", "Período", "Valor Fechado", "Data do Registro"])
+        self.tabela.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.tabela.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tabela.setAlternatingRowColors(True)
+        self.tabela.setShowGrid(False)
+        self.tabela.verticalHeader().setVisible(False)
+        layout.addWidget(self.tabela)
+        
+        btn_close = QPushButton("Sair")
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.clicked.connect(self.close)
+        layout.addWidget(btn_close, alignment=Qt.AlignRight)
+        
         self.setLayout(layout)
+        self.atualizar_dados()
 
-    def calcular_total(self):
-        try:
-            conn = conectar()
-            res = conn.cursor().execute("SELECT SUM(valor_total) FROM historico_servicos").fetchone()[0]
-            conn.close()
-            return res if res else 0.0
-        except: return 0.0
+    def criar_card(self, titulo, valor_inicial, texto_botao, funcao_botao):
+        frame = QFrame()
+        frame.setProperty("class", "card")
+        l = QVBoxLayout(frame)
+        l.setContentsMargins(20, 20, 20, 20)
+        l.setSpacing(10)
+        
+        lbl_t = QLabel(titulo)
+        lbl_t.setProperty("class", "card-title")
+        
+        lbl_v = QLabel(valor_inicial)
+        lbl_v.setProperty("class", "card-value")
+        lbl_v.setAlignment(Qt.AlignCenter)
+        
+        btn = QPushButton(texto_botao)
+        btn.setProperty("class", "primary")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(funcao_botao)
+        
+        l.addWidget(lbl_t, alignment=Qt.AlignCenter)
+        l.addWidget(lbl_v, alignment=Qt.AlignCenter)
+        l.addWidget(btn)
+        
+        frame.lbl_valor = lbl_v 
+        return frame
+
+    def atualizar_dados(self):
+        # Card Dia
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        total_dia = db.calcular_total_dia(hoje)
+        self.card_dia.lbl_valor.setText(f"R$ {total_dia:,.2f}")
+        
+        # Card Mês
+        mes = datetime.now().strftime("%m")
+        ano = datetime.now().strftime("%Y")
+        total_mes = db.calcular_total_mes(mes, ano)
+        self.card_mes.lbl_valor.setText(f"R$ {total_mes:,.2f}")
+        
+        # Tabela com Correção de Desempacotamento (Robustez)
+        registros = db.listar_fechamentos()
+        self.tabela.setRowCount(len(registros))
+        for i, row in enumerate(registros):
+            # Aqui está a correção: pegamos apenas os 4 primeiros itens, independente de quantos vierem
+            # Isso previne o erro "too many values to unpack"
+            if len(row) >= 4:
+                tipo, periodo, valor, data_reg = row[:4]
+                
+                self.tabela.setItem(i, 0, QTableWidgetItem(tipo))
+                self.tabela.setItem(i, 1, QTableWidgetItem(periodo))
+                
+                item_val = QTableWidgetItem(f"R$ {valor:,.2f}")
+                item_val.setForeground(QColor("#2E7D32")) # Verde
+                self.tabela.setItem(i, 2, item_val)
+                self.tabela.setItem(i, 3, QTableWidgetItem(data_reg))
+
+    def fechar_dia(self):
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        valor = db.calcular_total_dia(hoje)
+        
+        if valor == 0:
+            QMessageBox.warning(self, "Aviso", "Não há faturamento hoje para fechar.")
+            return
+
+        msg = QMessageBox.question(self, "Confirmar Fechamento", 
+                                   f"Deseja fechar o caixa de HOJE ({hoje})?\n\nValor Total: R$ {valor:,.2f}",
+                                   QMessageBox.Yes | QMessageBox.No)
+        
+        if msg == QMessageBox.Yes:
+            db.registrar_fechamento("Diário", hoje, valor)
+            QMessageBox.information(self, "Sucesso", "Caixa diário fechado e registrado!")
+            self.atualizar_dados()
+
+    def fechar_mes(self):
+        mes_ano = datetime.now().strftime("%m/%Y")
+        mes = datetime.now().strftime("%m")
+        ano = datetime.now().strftime("%Y")
+        valor = db.calcular_total_mes(mes, ano)
+        
+        if valor == 0:
+            QMessageBox.warning(self, "Aviso", "Não há faturamento neste mês.")
+            return
+
+        msg = QMessageBox.question(self, "Confirmar Fechamento", 
+                                   f"Deseja encerrar o caixa do MÊS ({mes_ano})?\n\nValor Total: R$ {valor:,.2f}",
+                                   QMessageBox.Yes | QMessageBox.No)
+        
+        if msg == QMessageBox.Yes:
+            db.registrar_fechamento("Mensal", mes_ano, valor)
+            QMessageBox.information(self, "Sucesso", "Caixa mensal encerrado e registrado!")
+            self.atualizar_dados()
 
 class DialogoSelecionarCliente(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Selecione o Cliente")
+        self.setWindowTitle("Nova Nota")
         self.resize(700, 450)
         self.cliente_selecionado = None 
 
         layout = QVBoxLayout()
-        lbl = QLabel("Selecione um cliente para gerar nota:")
-        lbl.setProperty("class", "title")
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        lbl = QLabel("Selecione o Cliente")
+        lbl.setProperty("class", "titulo")
         layout.addWidget(lbl)
         
         self.tabela = QTableWidget()
@@ -251,43 +381,43 @@ class DialogoSelecionarCliente(QDialog):
         self.tabela.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tabela.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tabela.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tabela.setAlternatingRowColors(True)
         self.tabela.setShowGrid(False)
+        self.tabela.setAlternatingRowColors(True)
         layout.addWidget(self.tabela)
         
         self.carregar_clientes()
         
         btns = QHBoxLayout()
-        btn_ok = QPushButton("Confirmar Seleção")
+        btn_ok = QPushButton("Confirmar")
         btn_ok.setProperty("class", "primary")
+        btn_ok.setCursor(Qt.PointingHandCursor)
         btn_ok.clicked.connect(self.confirmar)
         
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.clicked.connect(self.reject)
         
+        btns.addStretch()
         btns.addWidget(btn_cancel)
         btns.addWidget(btn_ok)
         layout.addLayout(btns)
         self.setLayout(layout)
 
     def carregar_clientes(self):
-        conn = conectar()
-        dados = conn.cursor().execute("SELECT id, nome, telefone, carro, placa, ano FROM clientes").fetchall()
+        dados = db.listar_clientes()
         self.tabela.setRowCount(len(dados))
         for i, row in enumerate(dados):
-            item_nome = QTableWidgetItem(str(row[1]))
+            item_nome = QTableWidgetItem(str(row[2]))
             item_nome.setData(Qt.UserRole, row[0])
             self.tabela.setItem(i, 0, item_nome)
-            self.tabela.setItem(i, 1, QTableWidgetItem(str(row[2])))
-            self.tabela.setItem(i, 2, QTableWidgetItem(str(row[3])))
-            self.tabela.setItem(i, 3, QTableWidgetItem(str(row[4])))
-            self.tabela.setItem(i, 4, QTableWidgetItem(str(row[5])))
-        conn.close()
+            self.tabela.setItem(i, 1, QTableWidgetItem(str(row[3])))
+            self.tabela.setItem(i, 2, QTableWidgetItem(str(row[5])))
+            self.tabela.setItem(i, 3, QTableWidgetItem(str(row[6])))
+            self.tabela.setItem(i, 4, QTableWidgetItem(str(row[7])))
 
     def confirmar(self):
         r = self.tabela.currentRow()
         if r < 0: 
-            QMessageBox.warning(self, "Aviso", "Selecione um cliente.")
+            QMessageBox.warning(self, "Aviso", "Selecione um cliente da lista.")
             return
         self.cliente_selecionado = {
             "id": self.tabela.item(r, 0).data(Qt.UserRole),
@@ -303,56 +433,71 @@ class DialogoSelecionarCliente(QDialog):
 class DialogoServico(QDialog):
     def __init__(self, cliente, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Nova Nota: {cliente['nome']}")
-        self.resize(700, 550)
+        self.setWindowTitle(f"Emitir Nota")
+        self.resize(800, 600)
+        
         layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
         
-        # Info Header
-        header_frame = QFrame()
-        header_frame.setStyleSheet("background-color: #F5F5F7; border-radius: 8px; padding: 10px;")
-        header_layout = QVBoxLayout(header_frame)
+        # Cabeçalho com Card
+        card = QFrame()
+        card.setProperty("class", "card")
+        l_card = QVBoxLayout(card)
+        lbl_cli = QLabel(f"{cliente['nome']}")
+        lbl_cli.setStyleSheet("font-size: 18px; font-weight: bold; color: #1D1D1F;")
+        lbl_det = QLabel(f"{cliente['carro']} • {cliente['placa']}")
+        lbl_det.setStyleSheet("font-size: 14px; color: #6e6e73;")
         
-        lbl_cli = QLabel(f"Cliente: {cliente['nome']}")
-        lbl_cli.setStyleSheet("font-weight: bold; font-size: 15px;")
-        lbl_car = QLabel(f"Veículo: {cliente['carro']}  |  Placa: {cliente['placa']}")
-        lbl_car.setStyleSheet("color: #555;")
+        l_card.addWidget(lbl_cli)
+        l_card.addWidget(lbl_det)
+        layout.addWidget(card)
         
-        header_layout.addWidget(lbl_cli)
-        header_layout.addWidget(lbl_car)
-        layout.addWidget(header_frame)
+        layout.addWidget(QLabel("Itens do Serviço"))
         
         self.tabela = QTableWidget(0, 3)
         self.tabela.setHorizontalHeaderLabels(["Qtd", "Descrição", "Valor Unit. (R$)"])
         self.tabela.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tabela.setAlternatingRowColors(True)
+        self.tabela.setShowGrid(False)
         layout.addWidget(self.tabela)
         
-        # Botões de Item
-        h_btns = QHBoxLayout()
-        btn_add = QPushButton("Adicionar Item")
+        # Botões de Ação da Tabela
+        h_act = QHBoxLayout()
+        btn_add = QPushButton("+ Adicionar Item")
+        btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self.add_item)
-        btn_rem = QPushButton("Remover Item")
+        
+        btn_rem = QPushButton("Remover Selecionado")
+        btn_rem.setProperty("class", "danger")
+        btn_rem.setCursor(Qt.PointingHandCursor)
         btn_rem.clicked.connect(self.remover_item)
-        h_btns.addWidget(btn_add)
-        h_btns.addWidget(btn_rem)
-        h_btns.addStretch()
-        layout.addLayout(h_btns)
+        
+        h_act.addWidget(btn_add)
+        h_act.addWidget(btn_rem)
+        h_act.addStretch()
+        layout.addLayout(h_act)
         
         # Total
         self.lbl_total = QLabel("Total: R$ 0,00")
-        self.lbl_total.setStyleSheet("font-size: 22px; font-weight: bold; color: #007AFF; margin-top: 10px;")
+        self.lbl_total.setStyleSheet("font-size: 24px; font-weight: bold; color: #007AFF; margin-top: 10px;")
         self.lbl_total.setAlignment(Qt.AlignRight)
         layout.addWidget(self.lbl_total)
         
-        # Botões Finais
-        bb = QDialogButtonBox()
-        btn_ok = bb.addButton("Gerar Nota e Salvar", QDialogButtonBox.AcceptRole)
-        btn_ok.setProperty("class", "primary")
-        btn_cancel = bb.addButton("Cancelar", QDialogButtonBox.RejectRole)
+        # Rodapé
+        h_foot = QHBoxLayout()
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.clicked.connect(self.reject)
         
-        bb.accepted.connect(self.validar_e_aceitar)
-        bb.rejected.connect(self.reject)
-        layout.addWidget(bb)
+        btn_save = QPushButton("Gerar PDF e Salvar")
+        btn_save.setProperty("class", "primary")
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.clicked.connect(self.validar_e_aceitar)
+        
+        h_foot.addStretch()
+        h_foot.addWidget(btn_cancel)
+        h_foot.addWidget(btn_save)
+        layout.addLayout(h_foot)
         
         self.setLayout(layout)
         self.add_item()
@@ -387,8 +532,8 @@ class DialogoServico(QDialog):
                 item_v.setBackground(QColor("#FFEBEE"))
                 erro = True
         
-        texto_total = f"Total: R$ {tot:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        self.lbl_total.setText(texto_total)
+        txt_tot = f"Total: R$ {tot:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        self.lbl_total.setText(txt_tot)
         if erro: self.lbl_total.setText("Erro no valor!")
         
     def validar_e_aceitar(self):
@@ -413,14 +558,15 @@ class CadastroCliente(QWidget):
     def __init__(self, parent=None):
         super().__init__()
         self.parent = parent
-        self.setWindowTitle("Novo Cliente")
-        self.resize(400, 550)
+        self.setWindowTitle("Novo Cadastro")
+        self.resize(450, 600)
         
         layout = QVBoxLayout()
-        layout.setSpacing(12)
+        layout.setContentsMargins(25, 25, 25, 25)
+        layout.setSpacing(15)
         
         lbl = QLabel("Dados do Cliente")
-        lbl.setProperty("class", "title")
+        lbl.setProperty("class", "titulo")
         layout.addWidget(lbl)
         
         self.inputs = {}
@@ -428,7 +574,7 @@ class CadastroCliente(QWidget):
         
         for c in campos:
             l = QLabel(c)
-            l.setStyleSheet("font-weight: bold; color: #555;")
+            l.setStyleSheet("font-weight: 600; color: #555;")
             layout.addWidget(l)
             inp = QLineEdit()
             if c == "Placa":
@@ -441,7 +587,7 @@ class CadastroCliente(QWidget):
             self.inputs[c] = inp
             layout.addWidget(inp)
             
-        layout.addSpacing(10)
+        layout.addStretch()
         btn = QPushButton("Salvar Cadastro")
         btn.setProperty("class", "primary")
         btn.setCursor(Qt.PointingHandCursor)
@@ -465,61 +611,57 @@ class DetalheCliente(QWidget):
         self.parent = parent
         self.id_cli = id_cli
         self.dados = dados
-        self.setWindowTitle("Detalhes do Cliente")
-        self.resize(400, 600)
+        self.setWindowTitle("Detalhes")
+        self.resize(400, 650)
         
         layout = QVBoxLayout()
+        layout.setContentsMargins(25, 25, 25, 25)
         layout.setSpacing(10)
         
-        lbl_tit = QLabel(dados[0]) # Nome
-        lbl_tit.setProperty("class", "title")
-        layout.addWidget(lbl_tit)
+        lbl_nome = QLabel(dados[0])
+        lbl_nome.setProperty("class", "titulo")
+        layout.addWidget(lbl_nome)
         
         labels = ["Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Observações"]
         for l, v in zip(labels, dados):
-            layout.addWidget(QLabel(f"{l}:"))
+            layout.addWidget(QLabel(f"{l}:", styleSheet="font-weight: bold; color: #666;"))
             inp = QLineEdit(str(v))
             inp.setReadOnly(True)
+            inp.setStyleSheet("background-color: #F5F5F7; border: none;")
             layout.addWidget(inp)
             
-        layout.addWidget(QLabel("Status Atual:"))
+        layout.addSpacing(10)
+        layout.addWidget(QLabel("Status do Serviço:", styleSheet="font-weight: bold;"))
+        
         self.cb_status = QComboBox()
         self.cb_status.addItems(["Aberto", "Aguardando Peça", "Em Andamento", "Concluído", "Entregue"])
         self.cb_status.setCurrentText(status)
         self.cb_status.currentTextChanged.connect(self.mudar_status)
         layout.addWidget(self.cb_status)
         
-        layout.addSpacing(15)
+        layout.addSpacing(20)
         
-        h_btns = QHBoxLayout()
-        btn_hist = QPushButton("Ver Histórico")
+        btn_hist = QPushButton("Ver Histórico Completo")
+        btn_hist.setCursor(Qt.PointingHandCursor)
         btn_hist.clicked.connect(lambda: DialogoHistorico(id_cli, dados[0], self).exec_())
         
-        btn_del = QPushButton("Excluir")
+        btn_del = QPushButton("Excluir Cliente")
         btn_del.setProperty("class", "danger")
         btn_del.setCursor(Qt.PointingHandCursor)
         btn_del.clicked.connect(self.excluir)
-        
-        h_btns.addWidget(btn_hist)
-        h_btns.addWidget(btn_del)
-        layout.addLayout(h_btns)
+        layout.addWidget(btn_del)
         
         self.setLayout(layout)
         
     def mudar_status(self, txt):
-        conn = conectar()
-        conn.cursor().execute("UPDATE clientes SET status=? WHERE id=?", (txt, self.id_cli))
-        conn.commit()
-        conn.close()
+        db.atualizar_status(self.id_cli, txt)
         if self.parent: self.parent.carregar()
         
     def excluir(self):
-        conn = conectar()
-        conn.cursor().execute("DELETE FROM clientes WHERE id=?", (self.id_cli,))
-        conn.commit()
-        conn.close()
-        if self.parent: self.parent.carregar()
-        self.close()
+        if QMessageBox.question(self, "Excluir", "Tem certeza?") == QMessageBox.Yes:
+            db.deletar_cliente(self.id_cli)
+            if self.parent: self.parent.carregar()
+            self.close()
 
 # =============================================================================
 # MENU PRINCIPAL
@@ -534,8 +676,16 @@ class MenuPrincipal(QWidget):
         self.setGeometry(100, 100, 1200, 700)
         
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+        
+        # Header da Tela Principal
+        header = QHBoxLayout()
+        lbl_logo = QLabel("Sistema de Gestão")
+        lbl_logo.setProperty("class", "titulo")
+        header.addWidget(lbl_logo)
+        header.addStretch()
+        layout.addLayout(header)
         
         # Tabela
         colunas = ["Status", "Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Obs"]
@@ -544,36 +694,35 @@ class MenuPrincipal(QWidget):
         self.tabela.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabela.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tabela.horizontalHeader().setSectionResizeMode(8, QHeaderView.Stretch)
+        self.tabela.verticalHeader().setVisible(False)
         self.tabela.setShowGrid(False)
         self.tabela.setAlternatingRowColors(True)
-        self.tabela.verticalHeader().setVisible(False)
         layout.addWidget(self.tabela)
         
-        # Botões Principais
+        # Barra de Ações (Botões)
         hbox = QHBoxLayout()
+        hbox.setSpacing(15)
         
-        b1 = QPushButton("Novo Cliente")
-        b1.setProperty("class", "primary") # Estilo azul
-        b1.setCursor(Qt.PointingHandCursor)
-        b1.clicked.connect(self.abrir_cadastro)
+        b_novo = QPushButton("Novo Cliente")
+        b_novo.setProperty("class", "primary")
+        b_novo.setCursor(Qt.PointingHandCursor)
+        b_novo.clicked.connect(self.abrir_cadastro)
         
-        b2 = QPushButton("Gerar Nota")
-        b2.setProperty("class", "success") # Estilo verde
-        b2.setCursor(Qt.PointingHandCursor)
-        b2.clicked.connect(self.gerar_nota)
+        b_nota = QPushButton("Gerar Nota")
+        b_nota.setCursor(Qt.PointingHandCursor)
+        b_nota.clicked.connect(self.gerar_nota)
         
-        b3 = QPushButton("Financeiro")
-        b3.setCursor(Qt.PointingHandCursor)
-        b3.clicked.connect(self.abrir_financeiro)
+        b_fin = QPushButton("Financeiro")
+        b_fin.setCursor(Qt.PointingHandCursor)
+        b_fin.clicked.connect(self.abrir_financeiro)
         
         b_sair = QPushButton("Sair")
-        b_sair.setCursor(Qt.PointingHandCursor)
         b_sair.clicked.connect(self.close)
         
-        hbox.addWidget(b1)
-        hbox.addWidget(b2)
-        hbox.addWidget(b3)
-        hbox.addStretch() # Empurra o sair para a direita
+        hbox.addWidget(b_novo)
+        hbox.addWidget(b_nota)
+        hbox.addWidget(b_fin)
+        hbox.addStretch()
         hbox.addWidget(b_sair)
         
         layout.addLayout(hbox)
@@ -608,7 +757,6 @@ class MenuPrincipal(QWidget):
             item_st = QTableWidgetItem(status)
             item_st.setData(Qt.UserRole, id_cli)
             
-            # Cores baseadas no status (QColor)
             if status in ["Concluído", "Entregue"]: 
                 item_st.setForeground(QColor("#2E7D32"))
                 item_st.setFont(QFont("Segoe UI", weight=QFont.Bold))
@@ -641,7 +789,6 @@ class MenuPrincipal(QWidget):
                     try:
                         self.criar_pdf(path, cli, itens, tot)
                         
-                        # Salvar Histórico
                         try:
                             conn = conectar()
                             js = json.dumps(itens)
@@ -659,7 +806,6 @@ class MenuPrincipal(QWidget):
         c = canvas.Canvas(arquivo, pagesize=A4)
         w, h = A4; m = 50; y = 800
         
-        # Cabeçalho
         c.setFont("Helvetica-Bold", 16)
         c.drawCentredString(w/2, y, "Auto Elétrica Diniz")
         y -= 20
@@ -670,27 +816,22 @@ class MenuPrincipal(QWidget):
         y -= 20
         c.drawCentredString(w/2, y, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
         
-        # Linha divisória
         y -= 20
         c.setLineWidth(1)
         c.line(m, y, w-m, y)
         
-        # Cliente
         y -= 40
         c.setFont("Helvetica-Bold", 12)
         c.drawString(m, y, f"Cliente: {cliente['nome']}")
         
-        # Tabela Config
         y -= 30
         col_qtd = m
         col_desc = m + 40
         col_val = w - 150
-        col_end = w - m
         h_row = 20
         
-        # Cabeçalho Tabela
         c.setFillColor(colors.lightgrey)
-        c.rect(col_qtd, y-5, col_end-col_qtd, h_row, fill=1, stroke=1)
+        c.rect(col_qtd, y-5, w-(m*2), h_row, fill=1, stroke=1)
         c.setFillColor(colors.black)
         
         c.line(col_desc, y-5, col_desc, y+15)
@@ -704,9 +845,8 @@ class MenuPrincipal(QWidget):
         y -= h_row
         c.setFont("Helvetica", 11)
         
-        # Itens
         for q, d, v in itens:
-            c.rect(col_qtd, y-5, col_end-col_qtd, h_row, fill=0, stroke=1)
+            c.rect(col_qtd, y-5, w-(m*2), h_row, fill=0, stroke=1)
             c.line(col_desc, y-5, col_desc, y+15)
             c.line(col_val, y-5, col_val, y+15)
             
@@ -720,7 +860,6 @@ class MenuPrincipal(QWidget):
                 y = 800
                 c.setFont("Helvetica", 11)
 
-        # Totais
         y -= 20
         c.setFont("Helvetica-Bold", 12)
         c.drawString(m, y, f"Valor Total: R$ {total:,.2f}".replace('.', ','))
@@ -729,11 +868,9 @@ class MenuPrincipal(QWidget):
         c.setFont("Helvetica-Bold", 11)
         c.drawString(m, y, "Forma de Pagamento: [Dinheiro / PIX / Cartão / Transferência]")
         
-        # Rodapé
         y -= 50
         c.setFont("Helvetica-Oblique", 11)
         c.drawString(m, y, "Observações:")
-        
         y -= 20
         c.setFont("Helvetica-Oblique", 10)
         c.drawString(m, y, "- Garantia de 90 dias conforme o Código de Defesa do Consumidor.")
@@ -744,7 +881,7 @@ class MenuPrincipal(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLESHEET) # APLICA O TEMA GLOBAL AQUI
+    app.setStyleSheet(STYLESHEET)
     window = MenuPrincipal()
     window.show()
     sys.exit(app.exec_())
