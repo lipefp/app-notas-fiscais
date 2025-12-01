@@ -1,26 +1,33 @@
 import sys
 import os
 import json
+import webbrowser  
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, QLineEdit, QPushButton, 
     QTableWidget, QTableWidgetItem, QHBoxLayout, QHeaderView, QDialog, 
     QDialogButtonBox, QFileDialog, QMessageBox, QAbstractItemView,
-    QComboBox, QFrame, QGridLayout
+    QComboBox, QFrame
 )
-from PyQt5.QtGui import QIntValidator, QColor, QFont
+from PyQt5.QtGui import QIntValidator, QColor, QFont, QIcon
 from PyQt5.QtCore import Qt
 
+# --- BIBLIOTECAS PARA O PDF ---
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-import models.db as db
-from models.db import conectar, salvar_cliente
+# --- IMPORTAÇÃO DO BANCO DE DADOS ---
+try:
+    import models.db as db
+    from models.db import conectar, salvar_cliente
+except ImportError:
+    print("ERRO CRÍTICO: Pasta 'models' ou arquivo 'db.py' não encontrados.")
+    sys.exit(1)
 
 # =============================================================================
-# ESTILO GLOBAL (CSS) - TEMA CLEAN / MACOS INSPIRED
+# ESTILO GLOBAL (CSS) 
 # =============================================================================
 STYLESHEET = """
     /* Fundo Geral */
@@ -102,6 +109,17 @@ STYLESHEET = """
     }
     QPushButton[class="success"]:hover {
         background-color: #2DB84C;
+    }
+    
+    /* Botão WhatsApp (Verde Zap) */
+    QPushButton[class="whatsapp"] {
+        background-color: #25D366;
+        color: white;
+        border: none;
+        font-weight: bold;
+    }
+    QPushButton[class="whatsapp"]:hover {
+        background-color: #128C7E;
     }
 
     /* Botões de Perigo (Vermelho Suave) */
@@ -307,35 +325,26 @@ class DialogoFinanceiro(QDialog):
         total_mes = db.calcular_total_mes(mes, ano)
         self.card_mes.lbl_valor.setText(f"R$ {total_mes:,.2f}")
         
-        # Tabela com Correção de Desempacotamento (Robustez)
+        # Tabela
         registros = db.listar_fechamentos()
         self.tabela.setRowCount(len(registros))
         for i, row in enumerate(registros):
-            # Aqui está a correção: pegamos apenas os 4 primeiros itens, independente de quantos vierem
-            # Isso previne o erro "too many values to unpack"
             if len(row) >= 4:
                 tipo, periodo, valor, data_reg = row[:4]
-                
                 self.tabela.setItem(i, 0, QTableWidgetItem(tipo))
                 self.tabela.setItem(i, 1, QTableWidgetItem(periodo))
-                
                 item_val = QTableWidgetItem(f"R$ {valor:,.2f}")
-                item_val.setForeground(QColor("#2E7D32")) # Verde
+                item_val.setForeground(QColor("#2E7D32"))
                 self.tabela.setItem(i, 2, item_val)
                 self.tabela.setItem(i, 3, QTableWidgetItem(data_reg))
 
     def fechar_dia(self):
         hoje = datetime.now().strftime("%d/%m/%Y")
         valor = db.calcular_total_dia(hoje)
-        
         if valor == 0:
             QMessageBox.warning(self, "Aviso", "Não há faturamento hoje para fechar.")
             return
-
-        msg = QMessageBox.question(self, "Confirmar Fechamento", 
-                                   f"Deseja fechar o caixa de HOJE ({hoje})?\n\nValor Total: R$ {valor:,.2f}",
-                                   QMessageBox.Yes | QMessageBox.No)
-        
+        msg = QMessageBox.question(self, "Confirmar Fechamento", f"Deseja fechar o caixa de HOJE ({hoje})?\n\nValor Total: R$ {valor:,.2f}", QMessageBox.Yes | QMessageBox.No)
         if msg == QMessageBox.Yes:
             db.registrar_fechamento("Diário", hoje, valor)
             QMessageBox.information(self, "Sucesso", "Caixa diário fechado e registrado!")
@@ -346,15 +355,10 @@ class DialogoFinanceiro(QDialog):
         mes = datetime.now().strftime("%m")
         ano = datetime.now().strftime("%Y")
         valor = db.calcular_total_mes(mes, ano)
-        
         if valor == 0:
             QMessageBox.warning(self, "Aviso", "Não há faturamento neste mês.")
             return
-
-        msg = QMessageBox.question(self, "Confirmar Fechamento", 
-                                   f"Deseja encerrar o caixa do MÊS ({mes_ano})?\n\nValor Total: R$ {valor:,.2f}",
-                                   QMessageBox.Yes | QMessageBox.No)
-        
+        msg = QMessageBox.question(self, "Confirmar Fechamento", f"Deseja encerrar o caixa do MÊS ({mes_ano})?\n\nValor Total: R$ {valor:,.2f}", QMessageBox.Yes | QMessageBox.No)
         if msg == QMessageBox.Yes:
             db.registrar_fechamento("Mensal", mes_ano, valor)
             QMessageBox.information(self, "Sucesso", "Caixa mensal encerrado e registrado!")
@@ -462,7 +466,6 @@ class DialogoServico(QDialog):
         self.tabela.setShowGrid(False)
         layout.addWidget(self.tabela)
         
-        # Botões de Ação da Tabela
         h_act = QHBoxLayout()
         btn_add = QPushButton("+ Adicionar Item")
         btn_add.setCursor(Qt.PointingHandCursor)
@@ -478,13 +481,11 @@ class DialogoServico(QDialog):
         h_act.addStretch()
         layout.addLayout(h_act)
         
-        # Total
         self.lbl_total = QLabel("Total: R$ 0,00")
         self.lbl_total.setStyleSheet("font-size: 24px; font-weight: bold; color: #007AFF; margin-top: 10px;")
         self.lbl_total.setAlignment(Qt.AlignRight)
         layout.addWidget(self.lbl_total)
         
-        # Rodapé
         h_foot = QHBoxLayout()
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.clicked.connect(self.reject)
@@ -518,7 +519,6 @@ class DialogoServico(QDialog):
         
     def calc(self):
         tot = 0.0
-        erro = False
         for r in range(self.tabela.rowCount()):
             item_v = self.tabela.item(r, 2)
             if not item_v: continue
@@ -527,14 +527,8 @@ class DialogoServico(QDialog):
             try:
                 val = float(txt)
                 tot += val
-                item_v.setBackground(QColor("white"))
-            except ValueError:
-                item_v.setBackground(QColor("#FFEBEE"))
-                erro = True
-        
-        txt_tot = f"Total: R$ {tot:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        self.lbl_total.setText(txt_tot)
-        if erro: self.lbl_total.setText("Erro no valor!")
+            except: pass
+        self.lbl_total.setText(f"Total: R$ {tot:,.2f}".replace('.', ','))
         
     def validar_e_aceitar(self):
         self.calc()
@@ -598,8 +592,8 @@ class CadastroCliente(QWidget):
         
     def salvar(self):
         dados = [self.inputs[k].text() for k in self.inputs]
-        if not dados[0].strip() or not dados[4].strip():
-            QMessageBox.warning(self, "Atenção", "Nome e Placa são obrigatórios.")
+        if not dados[0].strip():
+            QMessageBox.warning(self, "Atenção", "Nome obrigatório.")
             return
         salvar_cliente(*dados)
         if self.parent: self.parent.carregar()
@@ -639,20 +633,50 @@ class DetalheCliente(QWidget):
         self.cb_status.currentTextChanged.connect(self.mudar_status)
         layout.addWidget(self.cb_status)
         
-        layout.addSpacing(20)
+        # --- NOVO BOTÃO WHATSAPP ---
+        layout.addSpacing(15)
         
-        btn_hist = QPushButton("Ver Histórico Completo")
+        # Pega o telefone (índice 1 na lista 'dados') e remove caracteres não numéricos
+        telefone_raw = dados[1]
+        telefone_limpo = "".join(filter(str.isdigit, telefone_raw))
+        
+        btn_zap = QPushButton("Enviar Mensagem no WhatsApp")
+        btn_zap.setProperty("class", "whatsapp") # Estilo verde definido no CSS
+        btn_zap.setCursor(Qt.PointingHandCursor)
+        
+        # Conecta o botão à função de abrir link
+        btn_zap.clicked.connect(lambda: self.abrir_whatsapp(telefone_limpo))
+        layout.addWidget(btn_zap)
+        # ---------------------------
+        
+        layout.addSpacing(10)
+        h_btns = QHBoxLayout()
+        btn_hist = QPushButton("Ver Histórico")
         btn_hist.setCursor(Qt.PointingHandCursor)
         btn_hist.clicked.connect(lambda: DialogoHistorico(id_cli, dados[0], self).exec_())
         
-        btn_del = QPushButton("Excluir Cliente")
+        btn_del = QPushButton("Excluir")
         btn_del.setProperty("class", "danger")
         btn_del.setCursor(Qt.PointingHandCursor)
         btn_del.clicked.connect(self.excluir)
-        layout.addWidget(btn_del)
         
+        h_btns.addWidget(btn_hist)
+        h_btns.addWidget(btn_del)
+        layout.addLayout(h_btns)
         self.setLayout(layout)
         
+    def abrir_whatsapp(self, telefone):
+        if not telefone:
+            QMessageBox.warning(self, "Erro", "Cliente sem telefone cadastrado.")
+            return
+            
+        # Adiciona o código do país se não tiver (assumindo Brasil +55)
+        if len(telefone) <= 11: # Se for só DDD + Número
+            telefone = "55" + telefone
+            
+        url = f"https://web.whatsapp.com/send?phone={telefone}&text=Olá, gostaria de falar sobre o serviço do seu veículo."
+        webbrowser.open(url)
+
     def mudar_status(self, txt):
         db.atualizar_status(self.id_cli, txt)
         if self.parent: self.parent.carregar()
@@ -679,13 +703,10 @@ class MenuPrincipal(QWidget):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
         
-        # Header da Tela Principal
-        header = QHBoxLayout()
+        # Header
         lbl_logo = QLabel("Sistema de Gestão")
         lbl_logo.setProperty("class", "titulo")
-        header.addWidget(lbl_logo)
-        header.addStretch()
-        layout.addLayout(header)
+        layout.addWidget(lbl_logo)
         
         # Tabela
         colunas = ["Status", "Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Obs"]
@@ -699,7 +720,7 @@ class MenuPrincipal(QWidget):
         self.tabela.setAlternatingRowColors(True)
         layout.addWidget(self.tabela)
         
-        # Barra de Ações (Botões)
+        # Botões
         hbox = QHBoxLayout()
         hbox.setSpacing(15)
         
@@ -709,6 +730,7 @@ class MenuPrincipal(QWidget):
         b_novo.clicked.connect(self.abrir_cadastro)
         
         b_nota = QPushButton("Gerar Nota")
+        b_nota.setProperty("class", "success")
         b_nota.setCursor(Qt.PointingHandCursor)
         b_nota.clicked.connect(self.gerar_nota)
         
@@ -789,16 +811,10 @@ class MenuPrincipal(QWidget):
                     try:
                         self.criar_pdf(path, cli, itens, tot)
                         
-                        try:
-                            conn = conectar()
-                            js = json.dumps(itens)
-                            hj = datetime.now().strftime('%d/%m/%Y')
-                            conn.cursor().execute("INSERT INTO historico_servicos (id_cliente, data_servico, itens_json, valor_total, arquivo_path) VALUES (?,?,?,?,?)", (cli['id'], hj, js, tot, path))
-                            conn.commit()
-                            conn.close()
-                        except Exception as e:
-                            print(f"Erro ao salvar histórico: {e}")
-
+                        itens_json = json.dumps(itens)
+                        hj = datetime.now().strftime('%d/%m/%Y')
+                        db.salvar_historico(cli['id'], hj, itens_json, tot, path)
+                        
                         QMessageBox.information(self, "Sucesso", "Nota salva com sucesso!")
                     except Exception as e: QMessageBox.critical(self, "Erro", str(e))
 
