@@ -2,7 +2,7 @@ import sqlite3
 import os
 from datetime import datetime
 
-# --- CONFIGURAÇÃO DO CAMINHO DO BANCO ---
+# --- CONFIGURAÇÃO DO CAMINHO ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_NAME = os.path.join(DATA_DIR, "banco.db")
@@ -17,7 +17,7 @@ def criar_tabelas():
     conn = conectar()
     c = conn.cursor()
     
-    # Tabela Clientes
+    # 1. Clientes
     c.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +27,7 @@ def criar_tabelas():
         )
     """)
     
-    # Tabela Histórico
+    # 2. Histórico
     c.execute("""
         CREATE TABLE IF NOT EXISTS historico_servicos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,12 +40,12 @@ def criar_tabelas():
         )
     """)
     
-    # Tabela Fechamentos (ESSENCIAL PARA O ERRO QUE VOCÊ TEVE)
+    # 3. Fechamentos (Versão Simplificada - 4 Colunas)
     c.execute("""
         CREATE TABLE IF NOT EXISTS fechamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo TEXT,          -- 'Diário' ou 'Mensal'
-            periodo TEXT,       -- Ex: '27/11/2025'
+            tipo TEXT,
+            periodo TEXT,
             valor REAL,
             data_registro TEXT
         )
@@ -53,7 +53,7 @@ def criar_tabelas():
     conn.commit()
     conn.close()
 
-# --- CLIENTES ---
+# --- FUNÇÕES ---
 def salvar_cliente(nome, telefone, endereco, carro, placa, ano, km, observacoes):
     conn = conectar()
     conn.cursor().execute("""
@@ -85,7 +85,6 @@ def deletar_cliente(id_cliente):
     conn.commit()
     conn.close()
 
-# --- HISTÓRICO ---
 def salvar_historico(id_cliente, data, itens_json, total, arquivo):
     conn = conectar()
     conn.cursor().execute("""
@@ -103,10 +102,7 @@ def listar_historico(id_cliente):
     conn.close()
     return dados
 
-# --- FINANCEIRO (AS FUNÇÕES QUE ESTÃO FALTANDO) ---
-
 def calcular_total_dia(data_str):
-    """Soma notas emitidas na data exata."""
     conn = conectar()
     c = conn.cursor()
     c.execute("SELECT SUM(valor_total) FROM historico_servicos WHERE data_servico = ?", (data_str,))
@@ -115,7 +111,6 @@ def calcular_total_dia(data_str):
     return res if res else 0.0
 
 def calcular_total_mes(mes, ano):
-    """Soma notas emitidas no mês."""
     conn = conectar()
     c = conn.cursor()
     termo = f"%/{mes}/{ano}"
@@ -134,10 +129,11 @@ def registrar_fechamento(tipo, periodo, valor):
 def listar_fechamentos():
     conn = conectar()
     c = conn.cursor()
+    # Retorna EXATAMENTE 4 colunas, corrigindo o erro "expected 4"
     c.execute("SELECT tipo, periodo, valor, data_registro FROM fechamentos ORDER BY id DESC")
     dados = c.fetchall()
     conn.close()
     return dados
 
-# Garante criação ao importar
+# Garante as tabelas ao iniciar
 criar_tabelas()
