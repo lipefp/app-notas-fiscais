@@ -1,17 +1,17 @@
 import sys
 import os
 import json
-import webbrowser  
+import webbrowser
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, QLineEdit, QPushButton, 
     QTableWidget, QTableWidgetItem, QHBoxLayout, QHeaderView, QDialog, 
     QDialogButtonBox, QFileDialog, QMessageBox, QAbstractItemView,
-    QComboBox, QFrame
+    QComboBox, QFrame, QCompleter
 )
-from PyQt5.QtGui import QIntValidator, QColor, QFont, QIcon
-from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIntValidator, QColor, QFont
+from PyQt5.QtCore import Qt, QStringListModel
 
 # --- BIBLIOTECAS PARA O PDF ---
 from reportlab.lib.pagesizes import A4
@@ -110,7 +110,7 @@ STYLESHEET = """
     QPushButton[class="success"]:hover {
         background-color: #2DB84C;
     }
-    
+
     /* Botão WhatsApp (Verde Zap) */
     QPushButton[class="whatsapp"] {
         background-color: #25D366;
@@ -158,7 +158,6 @@ def verificar_banco_historico():
         conn = conectar()
         cursor = conn.cursor()
         
-        # Histórico
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS historico_servicos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +169,6 @@ def verificar_banco_historico():
             )
         """)
         
-        # Fechamentos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS fechamentos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,6 +176,14 @@ def verificar_banco_historico():
                 periodo TEXT,
                 valor REAL,
                 data_registro TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS produtos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                valor_padrao REAL
             )
         """)
 
@@ -194,6 +200,74 @@ def verificar_banco_historico():
 # =============================================================================
 # JANELAS AUXILIARES
 # =============================================================================
+
+# --- NOVA JANELA: CADASTRO DE PRODUTOS ---
+class DialogoProdutos(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Catálogo de Peças e Serviços")
+        self.resize(500, 400)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        lbl_titulo = QLabel("Gerenciar Catálogo")
+        lbl_titulo.setProperty("class", "titulo")
+        layout.addWidget(lbl_titulo)
+        
+        # Formulário Simples
+        form_layout = QHBoxLayout()
+        self.inp_nome = QLineEdit()
+        self.inp_nome.setPlaceholderText("Nome da Peça")
+        
+        self.inp_valor = QLineEdit()
+        self.inp_valor.setPlaceholderText("Valor (R$)")
+        self.inp_valor.setFixedWidth(100)
+        
+        btn_add = QPushButton("Adicionar")
+        btn_add.setProperty("class", "primary")
+        btn_add.clicked.connect(self.salvar)
+        
+        form_layout.addWidget(self.inp_nome)
+        form_layout.addWidget(self.inp_valor)
+        form_layout.addWidget(btn_add)
+        layout.addLayout(form_layout)
+        
+        # Tabela de Produtos
+        self.lista = QTableWidget(0, 2)
+        self.lista.setHorizontalHeaderLabels(["Item", "Valor Padrão"])
+        self.lista.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.lista.setShowGrid(False)
+        self.lista.setAlternatingRowColors(True)
+        layout.addWidget(self.lista)
+        
+        btn_close = QPushButton("Fechar")
+        btn_close.clicked.connect(self.close)
+        layout.addWidget(btn_close, alignment=Qt.AlignRight)
+        
+        self.setLayout(layout)
+        self.carregar()
+
+    def salvar(self):
+        nome = self.inp_nome.text().strip()
+        valor_txt = self.inp_valor.text().replace(',', '.').strip()
+        
+        if not nome:
+            return QMessageBox.warning(self, "Aviso", "Digite o nome do item.")
+            
+        try: valor = float(valor_txt)
+        except: valor = 0.0
+        
+        db.salvar_produto(nome, valor)
+        self.inp_nome.clear(); self.inp_valor.clear()
+        self.carregar()
+
+    def carregar(self):
+        dados = db.listar_produtos()
+        self.lista.setRowCount(len(dados))
+        for i, (nome, valor) in enumerate(dados):
+            self.lista.setItem(i, 0, QTableWidgetItem(nome))
+            self.lista.setItem(i, 1, QTableWidgetItem(f"R$ {valor:.2f}"))
 
 class DialogoHistorico(QDialog):
     def __init__(self, id_cliente, nome_cliente, parent=None):
@@ -237,7 +311,7 @@ class DialogoHistorico(QDialog):
             except: resumo = "-"
             self.tabela.setItem(i, 1, QTableWidgetItem(resumo))
             self.tabela.setItem(i, 2, QTableWidgetItem(f"R$ {valor:,.2f}"))
-        conn.close()
+        # conn.close() removido
 
 class DialogoFinanceiro(QDialog):
     def __init__(self, parent=None):
@@ -341,10 +415,15 @@ class DialogoFinanceiro(QDialog):
     def fechar_dia(self):
         hoje = datetime.now().strftime("%d/%m/%Y")
         valor = db.calcular_total_dia(hoje)
+        
         if valor == 0:
             QMessageBox.warning(self, "Aviso", "Não há faturamento hoje para fechar.")
             return
-        msg = QMessageBox.question(self, "Confirmar Fechamento", f"Deseja fechar o caixa de HOJE ({hoje})?\n\nValor Total: R$ {valor:,.2f}", QMessageBox.Yes | QMessageBox.No)
+
+        msg = QMessageBox.question(self, "Confirmar Fechamento", 
+                                   f"Deseja fechar o caixa de HOJE ({hoje})?\n\nValor Total: R$ {valor:,.2f}",
+                                   QMessageBox.Yes | QMessageBox.No)
+        
         if msg == QMessageBox.Yes:
             db.registrar_fechamento("Diário", hoje, valor)
             QMessageBox.information(self, "Sucesso", "Caixa diário fechado e registrado!")
@@ -355,10 +434,15 @@ class DialogoFinanceiro(QDialog):
         mes = datetime.now().strftime("%m")
         ano = datetime.now().strftime("%Y")
         valor = db.calcular_total_mes(mes, ano)
+        
         if valor == 0:
             QMessageBox.warning(self, "Aviso", "Não há faturamento neste mês.")
             return
-        msg = QMessageBox.question(self, "Confirmar Fechamento", f"Deseja encerrar o caixa do MÊS ({mes_ano})?\n\nValor Total: R$ {valor:,.2f}", QMessageBox.Yes | QMessageBox.No)
+
+        msg = QMessageBox.question(self, "Confirmar Fechamento", 
+                                   f"Deseja encerrar o caixa do MÊS ({mes_ano})?\n\nValor Total: R$ {valor:,.2f}",
+                                   QMessageBox.Yes | QMessageBox.No)
+        
         if msg == QMessageBox.Yes:
             db.registrar_fechamento("Mensal", mes_ano, valor)
             QMessageBox.information(self, "Sucesso", "Caixa mensal encerrado e registrado!")
@@ -457,6 +541,11 @@ class DialogoServico(QDialog):
         l_card.addWidget(lbl_det)
         layout.addWidget(card)
         
+        # --- AUTOCOMPLETAR ---
+        produtos = [p[0] for p in db.listar_produtos()]
+        self.completer = QCompleter(produtos)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        
         layout.addWidget(QLabel("Itens do Serviço"))
         
         self.tabela = QTableWidget(0, 3)
@@ -466,6 +555,7 @@ class DialogoServico(QDialog):
         self.tabela.setShowGrid(False)
         layout.addWidget(self.tabela)
         
+        # Botões de Ação da Tabela
         h_act = QHBoxLayout()
         btn_add = QPushButton("+ Adicionar Item")
         btn_add.setCursor(Qt.PointingHandCursor)
@@ -481,11 +571,13 @@ class DialogoServico(QDialog):
         h_act.addStretch()
         layout.addLayout(h_act)
         
+        # Total
         self.lbl_total = QLabel("Total: R$ 0,00")
         self.lbl_total.setStyleSheet("font-size: 24px; font-weight: bold; color: #007AFF; margin-top: 10px;")
         self.lbl_total.setAlignment(Qt.AlignRight)
         layout.addWidget(self.lbl_total)
         
+        # Rodapé
         h_foot = QHBoxLayout()
         btn_cancel = QPushButton("Cancelar")
         btn_cancel.clicked.connect(self.reject)
@@ -508,8 +600,24 @@ class DialogoServico(QDialog):
         r = self.tabela.rowCount()
         self.tabela.insertRow(r)
         self.tabela.setItem(r, 0, QTableWidgetItem("1"))
-        self.tabela.setItem(r, 1, QTableWidgetItem(""))
+        
+        # Descrição com Autocomplete
+        inp_desc = QLineEdit()
+        inp_desc.setCompleter(self.completer)
+        # Quando selecionar um item, preencher o valor
+        inp_desc.editingFinished.connect(lambda: self.preencher_valor(r, inp_desc.text()))
+        self.tabela.setCellWidget(r, 1, inp_desc)
+        
         self.tabela.setItem(r, 2, QTableWidgetItem("0,00"))
+
+    def preencher_valor(self, row, nome_item):
+        # Procura o valor no banco
+        produtos_db = db.listar_produtos()
+        for nome, valor in produtos_db:
+            if nome.lower() == nome_item.lower():
+                self.tabela.setItem(row, 2, QTableWidgetItem(f"{valor:.2f}".replace('.', ',')))
+                self.calc()
+                break
     
     def remover_item(self):
         r = self.tabela.currentRow()
@@ -519,6 +627,7 @@ class DialogoServico(QDialog):
         
     def calc(self):
         tot = 0.0
+        erro = False
         for r in range(self.tabela.rowCount()):
             item_v = self.tabela.item(r, 2)
             if not item_v: continue
@@ -527,8 +636,14 @@ class DialogoServico(QDialog):
             try:
                 val = float(txt)
                 tot += val
-            except: pass
-        self.lbl_total.setText(f"Total: R$ {tot:,.2f}".replace('.', ','))
+                item_v.setBackground(QColor("white"))
+            except ValueError:
+                item_v.setBackground(QColor("#FFEBEE"))
+                erro = True
+        
+        txt_tot = f"Total: R$ {tot:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        self.lbl_total.setText(txt_tot)
+        if erro: self.lbl_total.setText("Erro no valor!")
         
     def validar_e_aceitar(self):
         self.calc()
@@ -539,7 +654,10 @@ class DialogoServico(QDialog):
         tot = 0.0
         for r in range(self.tabela.rowCount()):
             q = self.tabela.item(r, 0).text()
-            d = self.tabela.item(r, 1).text()
+            # Pega texto do widget ou da célula
+            widget = self.tabela.cellWidget(r, 1)
+            d = widget.text() if widget else ""
+            
             try: 
                 raw = self.tabela.item(r, 2).text().replace(',', '.').strip()
                 v = float(raw)
@@ -556,9 +674,6 @@ class CadastroCliente(QWidget):
         self.resize(450, 600)
         
         layout = QVBoxLayout()
-        layout.setContentsMargins(25, 25, 25, 25)
-        layout.setSpacing(15)
-        
         lbl = QLabel("Dados do Cliente")
         lbl.setProperty("class", "titulo")
         layout.addWidget(lbl)
@@ -567,9 +682,7 @@ class CadastroCliente(QWidget):
         campos = ["Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Observações"]
         
         for c in campos:
-            l = QLabel(c)
-            l.setStyleSheet("font-weight: 600; color: #555;")
-            layout.addWidget(l)
+            layout.addWidget(QLabel(c, styleSheet="font-weight: 600; color: #555;"))
             inp = QLineEdit()
             if c == "Placa":
                 inp.setPlaceholderText("ABC1234")
@@ -577,7 +690,6 @@ class CadastroCliente(QWidget):
                 inp.textChanged.connect(lambda t, x=inp: x.setText(t.upper()))
             elif c in ["Ano", "KM"]:
                 inp.setValidator(QIntValidator())
-            
             self.inputs[c] = inp
             layout.addWidget(inp)
             
@@ -609,24 +721,19 @@ class DetalheCliente(QWidget):
         self.resize(400, 650)
         
         layout = QVBoxLayout()
-        layout.setContentsMargins(25, 25, 25, 25)
-        layout.setSpacing(10)
-        
         lbl_nome = QLabel(dados[0])
         lbl_nome.setProperty("class", "titulo")
         layout.addWidget(lbl_nome)
         
         labels = ["Nome", "Telefone", "Endereço", "Carro", "Placa", "Ano", "KM", "Observações"]
         for l, v in zip(labels, dados):
-            layout.addWidget(QLabel(f"{l}:", styleSheet="font-weight: bold; color: #666;"))
+            layout.addWidget(QLabel(f"{l}:"))
             inp = QLineEdit(str(v))
             inp.setReadOnly(True)
-            inp.setStyleSheet("background-color: #F5F5F7; border: none;")
             layout.addWidget(inp)
             
         layout.addSpacing(10)
-        layout.addWidget(QLabel("Status do Serviço:", styleSheet="font-weight: bold;"))
-        
+        layout.addWidget(QLabel("Status:"))
         self.cb_status = QComboBox()
         self.cb_status.addItems(["Aberto", "Aguardando Peça", "Em Andamento", "Concluído", "Entregue"])
         self.cb_status.setCurrentText(status)
@@ -738,12 +845,18 @@ class MenuPrincipal(QWidget):
         b_fin.setCursor(Qt.PointingHandCursor)
         b_fin.clicked.connect(self.abrir_financeiro)
         
+        # --- NOVO BOTÃO: CATÁLOGO ---
+        b_cat = QPushButton("Catálogo de Peças")
+        b_cat.setCursor(Qt.PointingHandCursor)
+        b_cat.clicked.connect(self.abrir_catalogo)
+        
         b_sair = QPushButton("Sair")
         b_sair.clicked.connect(self.close)
         
         hbox.addWidget(b_novo)
         hbox.addWidget(b_nota)
         hbox.addWidget(b_fin)
+        hbox.addWidget(b_cat)
         hbox.addStretch()
         hbox.addWidget(b_sair)
         
@@ -760,6 +873,10 @@ class MenuPrincipal(QWidget):
     def abrir_financeiro(self):
         self.janela_financeiro = DialogoFinanceiro(self)
         self.janela_financeiro.show()
+    
+    def abrir_catalogo(self):
+        self.janela_catalogo = DialogoProdutos(self)
+        self.janela_catalogo.show()
 
     def carregar(self):
         conn = conectar()

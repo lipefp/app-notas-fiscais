@@ -17,7 +17,7 @@ def criar_tabelas():
     conn = conectar()
     c = conn.cursor()
     
-    # 1. Clientes
+    # Clientes
     c.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +27,7 @@ def criar_tabelas():
         )
     """)
     
-    # 2. Histórico
+    # Histórico
     c.execute("""
         CREATE TABLE IF NOT EXISTS historico_servicos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,7 +40,7 @@ def criar_tabelas():
         )
     """)
     
-    # 3. Fechamentos (Versão Simplificada - 4 Colunas)
+    # Fechamentos
     c.execute("""
         CREATE TABLE IF NOT EXISTS fechamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,10 +50,35 @@ def criar_tabelas():
             data_registro TEXT
         )
     """)
+
+    # NOVA TABELA: PRODUTOS (PEÇAS E SERVIÇOS)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS produtos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            valor_padrao REAL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
-# --- FUNÇÕES ---
+# --- PRODUTOS (NOVO) ---
+def salvar_produto(nome, valor):
+    conn = conectar()
+    conn.cursor().execute("INSERT INTO produtos (nome, valor_padrao) VALUES (?, ?)", (nome, valor))
+    conn.commit()
+    conn.close()
+
+def listar_produtos():
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("SELECT nome, valor_padrao FROM produtos ORDER BY nome")
+    dados = c.fetchall()
+    conn.close()
+    return dados
+
+# --- CLIENTES ---
 def salvar_cliente(nome, telefone, endereco, carro, placa, ano, km, observacoes):
     conn = conectar()
     conn.cursor().execute("""
@@ -85,6 +110,7 @@ def deletar_cliente(id_cliente):
     conn.commit()
     conn.close()
 
+# --- HISTÓRICO & FINANCEIRO ---
 def salvar_historico(id_cliente, data, itens_json, total, arquivo):
     conn = conectar()
     conn.cursor().execute("""
@@ -129,11 +155,9 @@ def registrar_fechamento(tipo, periodo, valor):
 def listar_fechamentos():
     conn = conectar()
     c = conn.cursor()
-    # Retorna EXATAMENTE 4 colunas, corrigindo o erro "expected 4"
     c.execute("SELECT tipo, periodo, valor, data_registro FROM fechamentos ORDER BY id DESC")
     dados = c.fetchall()
     conn.close()
     return dados
 
-# Garante as tabelas ao iniciar
 criar_tabelas()
