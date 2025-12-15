@@ -1,52 +1,53 @@
-🚗 Sistema de Gestão - Oficina
+🚗 Workshop Management System
 
-Um sistema desktop completo para gestão de oficinas mecânicas e autoelétricas, focado em agilidade no atendimento, organização financeira e emissão de documentos.
+A complete desktop system for managing mechanical and auto electrical workshops, focused on efficient service, financial organization, and document issuance.
 
-O sistema conta com uma interface limpa e intuitiva.
+The system features a clean and intuitive interface.
 
-🚀 Funcionalidades Principais
+🚀 Main Features
 
-📋 Cadastro de Clientes e Veículos: Registro detalhado com validação automática de placas (padrão Mercosul e Antigo).
+📋 Customer and Vehicle Registration: Detailed registration with automatic license plate validation (Mercosur and Old standards).
 
-📝 Geração de Notas de Serviço: Criação rápida de ordens de serviço com múltiplos itens (peças e mão de obra).
+📝 Service Order Generation: Quick creation of service orders with multiple items (parts and labor).
 
-🖨️ Exportação PDF Profissional: Gera orçamentos e recibos em PDF com layout corporativo, pronto para impressão ou envio via WhatsApp.
+🖨️ Professional PDF Export: Generates quotes and receipts in PDF format with a corporate layout, ready for printing or sending via WhatsApp.
 
-💰 Controle Financeiro: Relatório instantâneo de faturamento acumulado e fluxo de caixa.
+💰 Financial Control: Instant report of accumulated revenue and cash flow.
 
-📂 Histórico (Prontuário): Consulta completa de todos os serviços já realizados em um veículo específico.
+📂 History (Record): Complete consultation of all services performed on a specific vehicle.
 
-🎨 Interface Clean: Design moderno, responsivo e fácil de usar.
+🎨 Clean Interface: Modern, responsive, and easy-to-use design.
 
-🛠️ Tecnologias Utilizadas
+🛠️ Technologies Used
 
-Linguagem: Python 3
+Language: Python 3
 
-GUI (Interface Gráfica): PyQt5
+GUI (Graphical Interface): PyQt5
 
-Banco de Dados: SQLite3 (Nativo, sem necessidade de servidor externo)
+Database: SQLite3 (Native, no external server required)
 
-Relatórios: ReportLab (Engine de geração de PDFs)
+Reports: ReportLab (PDF generation engine)
 
-Controle de Versão: Git & GitHub
+Version Control: Git & GitHub
 
-🗂️ Estrutura do Projeto
+🗂️ Project Structure
 
 app-notas-fiscais/
 
 ├── src/
 
-│   ├── main.py          # Interface e Lógica Principal
+│ ├── main.py # Main Interface and Logic
 
-│   └── models/
+│ └── models/
 
-│       └── db.py        # Camada de Banco de Dados (SQLite)
+│ └── db.py # Database Layer (SQLite)
 
-├── assets/              # Imagens e demonstrações
+├── assets/ # Images and demonstrations
 
-├── .gitignore           # Arquivos ignorados pelo Git
+├── .gitignore # Files ignored by Git
 
-├── LICENSE              # Licença de uso
+├── LICENSE # Usage License
 
-└── README.md            # Documentação do projeto
+└── README.md # Project Documentation
 
+ 
